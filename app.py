@@ -1,3 +1,4 @@
+import time
 import math
 import numpy as np
 import streamlit as st
@@ -237,28 +238,147 @@ st.markdown(f"**Flow explanation:** {regime_description}")
 st.latex(r"\mathrm{Re} = \frac{\rho V D}{\mu}")
 
 # ------------------------------------------------------------
-# 3D pipe and representative particles
-# ------------------------------------------------------------
+# 3D pipe and animated particles
 st.subheader("3D pipe view")
-st.caption("On a phone: drag with one finger to rotate; pinch to zoom.")
 
-theta = np.linspace(0, 2 * np.pi, 48)
-x_axis = np.linspace(0, 1.8, 32)
-theta_grid, x_grid = np.meshgrid(theta, x_axis)
-radius = 0.28
+animate_particles = st.checkbox("▶️ Animate Particles", value=True)
 
-y_pipe = radius * np.cos(theta_grid)
-z_pipe = radius * np.sin(theta_grid)
+animation_speed = st.slider(
+    "Animation Speed",
+    min_value=0.5,
+    max_value=2.0,
+    value=1.0,
+    step=0.1,
+)
 
-pipe = go.Surface(
-    x=x_grid,
-    y=y_pipe,
-    z=z_pipe,
-    opacity=0.18,
-    showscale=False,
-    colorscale=[[0, "#9BCBEA"], [1, "#9BCBEA"]],
-    name="Pipe",
-    hoverinfo="skip",
+pipe_length = 1.8
+particle_count = 30
+
+if "particle_animation_start" not in st.session_state:
+    st.session_state.particle_animation_start = time.monotonic()
+
+@st.fragment(run_every=0.05 if animate_particles else None)
+def render_animated_pipe():
+
+    # Read live slider values on every refresh
+    v = float(st.session_state.velocity)
+    d = float(st.session_state.diameter)
+    fluid_now = st.session_state.fluid
+
+    rho = FLUIDS[fluid_now]["density"]
+    mu = FLUIDS[fluid_now]["viscosity"]
+    re = rho * v * d / mu
+
+    if re < 2300:
+        regime_now = "Laminar"
+        particle_color = "#35A7FF"
+    elif re <= 4000:
+        regime_now = "Transitional"
+        particle_color = "#F4B942"
+    else:
+        regime_now = "Turbulent"
+        particle_color = "#F06445"
+
+    # Time elapsed since animation began
+    elapsed = time.monotonic() - st.session_state.particle_animation_start
+
+    # Starting positions of 30 particles
+    particle_id = np.arange(particle_count)
+    base_x = np.linspace(0, pipe_length, particle_count, endpoint=False)
+
+    rng = np.random.default_rng(7)
+
+    if regime_now == "Laminar":
+        # Three orderly layers; no sideways mixing
+        base_y = np.repeat([-0.10, 0.0, 0.10], 10)
+        base_z = np.repeat([0.05, 0.0, -0.05], 10)
+        wobble = 0.0
+
+    else:
+        # Spread particles across the pipe
+        angle = rng.uniform(0, 2 * np.pi, particle_count)
+        r = np.sqrt(rng.uniform(0, 1, particle_count)) * 0.13
+        base_y = r * np.cos(angle)
+        base_z = r * np.sin(angle)
+
+        wobble = 0.008 if regime_now == "Transitional" else 0.02
+
+    # Main movement: faster velocity = faster particle movement
+    if animate_particles:
+        particle_x = (
+            base_x + v * elapsed * animation_speed
+        ) % pipe_length
+    else:
+        particle_x = base_x
+
+    # Wobble for transitional and turbulent flow
+    phase = elapsed * 5 + particle_id
+
+    particle_y = base_y + np.sin(phase) * wobble
+    particle_z = base_z + np.cos(phase) * wobble
+
+    # Draw the pipe
+    theta = np.linspace(0, 2 * np.pi, 48)
+    x_axis = np.linspace(0, pipe_length, 32)
+    theta_grid, x_grid = np.meshgrid(theta, x_axis)
+
+    radius = 0.28
+    y_pipe = radius * np.cos(theta_grid)
+    z_pipe = radius * np.sin(theta_grid)
+
+    pipe = go.Surface(
+        x=x_grid,
+        y=y_pipe,
+        z=z_pipe,
+        opacity=0.18,
+        showscale=False,
+        colorscale=[[0, "#9BCBEA"], [1, "#9BCBEA"]],
+        hoverinfo="skip",
+    )
+
+    particles = go.Scatter3d(
+        x=particle_x,
+        y=particle_y,
+        z=particle_z,
+        mode="markers",
+        marker=dict(
+            size=5,
+            color=particle_color,
+            opacity=0.95,
+        ),
+        name="Moving particles",
+    )
+
+    fig = go.Figure(data=[pipe, particles])
+
+    fig.update_layout(
+        height=560,
+        margin=dict(l=0, r=0, t=10, b=0),
+        scene=dict(
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+            zaxis=dict(visible=False),
+            aspectmode="manual",
+            aspectratio=dict(x=2.5, y=1, z=1),
+            camera=dict(eye=dict(x=1.7, y=1.6, z=1.2)),
+        ),
+        showlegend=False,
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            "scrollZoom": True,
+            "displayModeBar": True,
+            "responsive": True,
+        },
+    )
+
+render_animated_pipe()
+
+st.caption(
+    "Conceptual 3D flow animation, not a computational-fluid-dynamics simulation."
 )
 
 # Use a repeatable set of particle positions; color indicates flow regime.
