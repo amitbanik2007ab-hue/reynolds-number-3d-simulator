@@ -385,6 +385,7 @@ st.caption(
 rng = np.random.default_rng(7)
 particle_x = np.linspace(0.08, 1.72, 30)
 particle_angle = rng.uniform(0, 2 * np.pi, 30)
+radius = 0.28
 particle_r = np.sqrt(rng.uniform(0.0, 0.72, 30)) * radius * 0.78
 particle_y = particle_r * np.cos(particle_angle)
 particle_z = particle_r * np.sin(particle_angle)
